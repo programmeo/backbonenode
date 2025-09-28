@@ -1,6 +1,6 @@
 {
-  "name": "backbone",
-  "version": "1.0.1",
+  "name": "@programmeo/backbonenode",
+  "version": "1.0.0",
   "description": "Backend scaffolding CLI",
   "bin": {
     "backbonenode": "./bin/index.js"
