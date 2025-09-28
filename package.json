@@ -1,9 +1,9 @@
 {
   "name": "backbone",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Backend scaffolding CLI",
   "bin": {
-    "backbone": "./bin/index.js"
+    "backbonenode": "./bin/index.js"
   },
   "type": "module",
   "scripts": {
