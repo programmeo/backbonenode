@@ -1,13 +1,13 @@
 import { Router } from 'express';
+import { getHealthStatus } from '../controllers/health.controller.js';
 const router = Router();
 
-import authRoutes from './authRoutes.js';
+// This might be replaced/appended during generation if auth is selected
+// import authRoutes from './authRoutes.js';
 
-router.get('/', (req, res) => {
-  res.json({ message: 'API is working' });
-});
+router.get('/health', getHealthStatus);
 
-// Mount auth routes
-router.use('/auth', authRoutes);
+// Mount auth routes if generated
+// router.use('/auth', authRoutes);
 
 export default router;

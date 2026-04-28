@@ -1,9 +1,9 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { installDependencies } from './installer.js';
 import { generateConstantsContent } from './constants-generator.js';
 import { generateEnvContent } from './env-generator.js';
+import { calculateDependencies } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,27 +24,38 @@ async function installAuthModule(targetDir, authType, authFeatures) {
   // Copy auth module files
   await fs.copy(authTemplateDir, targetDir);
   console.log(`Added authentication module (${authType})`);
-  
-  // Return auth-specific dependencies
-  const dependencies = [
-    'jsonwebtoken',
-    'bcryptjs',
-    'express-rate-limit',
-    'helmet'
-  ];
+}
 
-  if (authType === 'session') {
-    dependencies.push(
-      'express-session',
-      'connect-mongo'
-    );
-  }
+function getReadmeContent(projectName, deps) {
+  return `# ${projectName}
 
-  if (authFeatures.includes('googleOAuth')) {
-    dependencies.push('passport', 'passport-google-oauth20');
-  }
+This project was generated with Backbone CLI.
 
-  return dependencies;
+## Quick Start
+
+1. Install dependencies:
+   \`\`\`bash
+   npm install
+   \`\`\`
+2. Set up your \`.env\` file based on \`.env.example\`
+3. Start the development server:
+   \`\`\`bash
+   npm run dev
+   \`\`\`
+
+## Testing API (cURL)
+
+You can quickly test if the server is running optimally using this cURL command:
+\`\`\`bash
+curl -X GET http://localhost:3000/api/health
+\`\`\`
+
+${deps.find(d => d.name === 'jsonwebtoken') ? `## Authentication
+This project uses JWT authentication. You can test register/login flows at \`/api/auth/register\` and \`/api/auth/login\`.` : ''}
+
+## Features Installed
+${deps.map(d => `- **${d.name}**`).join('\n')}
+`;
 }
 
 /**
@@ -58,7 +69,8 @@ export async function generateProject(options) {
     authType,
     authFeatures = [],
     includeNotifications = false,
-    notificationProviders = []
+    notificationProviders = [],
+    includeCrons = false
   } = options;
 
   const targetDir = path.resolve(process.cwd(), projectName);
@@ -72,16 +84,9 @@ export async function generateProject(options) {
   try {
     // Create project structure
     await fs.copy(templateDir, targetDir);
-    // Ensure root-level entrypoints are present (app.js, server.js)
-    const rootAppSrc = path.resolve(templateDir, 'app.js');
-    const rootServerSrc = path.resolve(templateDir, 'server.js');
-    if (await fs.pathExists(rootAppSrc)) {
-      await fs.copy(rootAppSrc, path.join(targetDir, 'app.js'));
-    }
-    if (await fs.pathExists(rootServerSrc)) {
-      await fs.copy(rootServerSrc, path.join(targetDir, 'server.js'));
-    }
-    // Remove redundant entry files under src/ to keep layout flat
+    // Note: The template already has bin/server.js and app.js correctly placed.
+
+    // Remove redundant entry files under src/ to keep layout flat if any exist
     const redundant = [
       path.join(targetDir, 'src', 'app.js'),
       path.join(targetDir, 'src', 'server.js'),
@@ -94,9 +99,8 @@ export async function generateProject(options) {
     }
     console.log(`Created project folder: ${projectName}`);
 
-    // Initialize features map and dependencies
     const features = new Set();
-    let dependencies = [];
+    const depsList = calculateDependencies(options);
 
     // Handle MongoDB setup
     if (database === 'mongoose') {
@@ -107,14 +111,12 @@ export async function generateProject(options) {
       const targetDb = path.join(targetDir, 'src', 'config', 'db.js');
       await fs.copy(dbTemplate, targetDb);
       console.log('Added MongoDB (Mongoose) config');
-      dependencies.push('mongoose');
       features.add('mongodb');
     }
 
     // Handle authentication setup
     if (includeAuth) {
-        const authDeps = await installAuthModule(targetDir, authType, authFeatures);
-        dependencies = [...dependencies, ...authDeps];
+        await installAuthModule(targetDir, authType, authFeatures);
         // Remove deprecated authConstants if present in copied templates
         const maybeAuthConstants = path.join(targetDir, 'src', 'config', 'authConstants.js');
         if (await fs.pathExists(maybeAuthConstants)) {
@@ -136,9 +138,6 @@ export async function generateProject(options) {
         if (await fs.pathExists(emailConfigSrc)) {
           await fs.copy(emailConfigSrc, emailConfigTarget);
         }
-        dependencies.push('nodemailer');
-        // ejs is used for optional templating support
-        dependencies.push('ejs');
         features.add('notifications-email');
       }
 
@@ -148,18 +147,22 @@ export async function generateProject(options) {
         if (await fs.pathExists(smsConfigSrc)) {
           await fs.copy(smsConfigSrc, smsConfigTarget);
         }
-        dependencies.push('twilio');
         features.add('notifications-sms');
       }
     }
 
-    // Install all dependencies at once
-    if (dependencies.length > 0) {
-      await installDependencies(dependencies, targetDir);
+    // Handle cron setup
+    if (includeCrons) {
+      const cronsTemplateDir = path.resolve(__dirname, '../modules/cron/templates/src/crons');
+      const targetCronsDir = path.join(targetDir, 'src', 'crons');
+      await fs.copy(cronsTemplateDir, targetCronsDir);
+      console.log('Added sample cron job');
+      features.add('crons');
     }
 
     // Generate environment variables
-    const envPath = path.join(targetDir, '.env.example');
+    const envExamplePath = path.join(targetDir, '.env.example');
+    const envPath = path.join(targetDir, '.env');
     const envContent = generateEnvContent({
       database,
       includeAuth,
@@ -167,8 +170,9 @@ export async function generateProject(options) {
       includeNotifications,
       notificationProviders
     });
+    await fs.writeFile(envExamplePath, envContent, 'utf8');
     await fs.writeFile(envPath, envContent, 'utf8');
-    console.log('Updated .env.example');
+    console.log('Updated .env.example and created .env');
 
     // Generate constants file
     const constantsPath = path.join(targetDir, 'src', 'config', 'constants.js');
@@ -179,11 +183,28 @@ export async function generateProject(options) {
       includeNotifications,
       notificationProviders
     });
-
     await fs.outputFile(constantsPath, constantsContent);
     console.log('🔧 Generated src/config/constants.js');
 
-    console.log('\nProject setup complete!');
+    // Generate README.md
+    const readmeContent = getReadmeContent(projectName, depsList);
+    await fs.writeFile(path.join(targetDir, 'README.md'), readmeContent, 'utf8');
+    console.log('📝 Generated README.md');
+
+    // Update package.json dynamically with latest dependencies
+    const packageJsonPath = path.join(targetDir, 'package.json');
+    if (await fs.pathExists(packageJsonPath)) {
+      const pkg = await fs.readJson(packageJsonPath);
+      // Ensure we add base deps like compression
+      const combinedDeps = depsList.reduce((acc, dep) => {
+        acc[dep.name] = dep.version; // e.g. "express": "latest"
+        return acc;
+      }, {});
+      pkg.dependencies = { ...pkg.dependencies, ...combinedDeps };
+      await fs.writeJson(packageJsonPath, pkg, { spaces: 2 });
+    }
+
+    console.log('\n✅ Project setup complete!');
     console.log('Installed features:', Array.from(features).join(', '));
     console.log('\nTo get started:');
     console.log(`cd ${projectName}`);

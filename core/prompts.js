@@ -68,6 +68,12 @@ export async function askProjectQuestions() {
         { name: 'SMS (Twilio)', value: 'sms' }
       ],
       when: (answers) => answers.includeNotifications
+    },
+    {
+      type: 'confirm',
+      name: 'includeCrons',
+      message: 'Would you like to include cron jobs (node-cron)?',
+      default: false
     }
   ]);
   return answers;
