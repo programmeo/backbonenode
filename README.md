@@ -65,7 +65,7 @@ We welcome contributions from the community! Whether it's fixing bugs, improving
 
 ## 👥 Contributors
 
-This project is maintained by the **Programimeo** team and the open-source community. 
+This project is maintained by the **Programmeo** and the open-source community. 
 
 If you contribute to this repository, your name will be added here! We deeply appreciate the developers who dedicate their time to making scaffolding easier for everyone.
 
